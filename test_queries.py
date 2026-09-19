@@ -4,6 +4,8 @@ Offline tests use fakes. Live tests call OpenAI and DBPedia, and only run
 when OPENAI_API_KEY is set (as it is in CI).
 """
 
+import contextlib
+import io
 import json
 import logging
 import os
@@ -14,7 +16,7 @@ from urllib.error import URLError
 
 import openai
 from rdflib import Graph, Literal, URIRef
-from SPARQLWrapper import JSON, RDFXML
+from SPARQLWrapper import JSON, TURTLE
 
 from errors import (
     ConfigurationError,
@@ -22,10 +24,12 @@ from errors import (
     QueryExecutionError,
     QueryGenerationError,
 )
-from executor import choose_return_format, execute_sparql, flatten_response
+from display import display_results, format_row, write_line
+from executor import MAX_RESPONSE_BYTES, choose_return_format, execute_sparql
 from logging_setup import JsonLogFormatter
 from pipeline import run_pipeline
 from query_generator import generate_sparql
+from sparql_response import flatten_response
 from sparql_text import (
     MAX_MODEL_REPLY_LENGTH,
     MAX_NATURAL_QUERY_LENGTH,
@@ -50,10 +54,28 @@ def make_openai_client(reply_text=None, error=None, choices=None):
     return SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
 
-def make_sparql_client(response=None, error=None):
-    """Build a fake SPARQLWrapper client."""
+def encode_fake_response(response):
+    """Return (body bytes, content type) the way an endpoint would send the response."""
+    if isinstance(response, Graph):
+        return response.serialize(format="turtle").encode("utf-8"), "text/turtle"
+    if isinstance(response, bytes):
+        return response, "application/sparql-results+json"
+    return json.dumps(response).encode("utf-8"), "application/sparql-results+json"
+
+
+def make_sparql_client(response=None, error=None, content_type=None):
+    """Build a fake SPARQLWrapper client that serves one raw response."""
+    body, default_content_type = encode_fake_response(response)
+    if content_type is None:
+        content_type = default_content_type
+    http_response = mock.Mock()
+    http_response.read.return_value = body
+    result = SimpleNamespace(
+        info=mock.Mock(return_value={"content-type": content_type}),
+        response=http_response,
+    )
     return SimpleNamespace(
-        queryAndConvert=mock.Mock(return_value=response, side_effect=error)
+        query=mock.Mock(return_value=result, side_effect=error), http_response=http_response
     )
 
 
@@ -119,6 +141,36 @@ class SparqlValidationTests(unittest.TestCase):
             with self.subTest(query=query):
                 with self.assertRaises(InvalidInputError):
                     validate_sparql_query(query)
+
+    def test_rejects_federated_service_calls(self):
+        federated_queries = (
+            "SELECT ?s WHERE { SERVICE <http://127.0.0.1:9876/sparql> { ?s ?p ?o } }",
+            "SELECT ?s WHERE { ?s ?p ?o . { { SERVICE <http://10.0.0.1/> { ?s ?q ?r } } } }",
+            "SELECT ?s WHERE { SERVICE SILENT <http://127.0.0.1/> { ?s ?p ?o } }",
+            "SELECT ?s WHERE { ?x ?y ?endpoint . SERVICE ?endpoint { ?s ?p ?o } }",
+            "select ?s where { service<http://127.0.0.1/>{ ?s ?p ?o } }",
+            "SELECT ?s WHERE { { SELECT ?s WHERE { SeRvIcE <http://x/> { ?s ?p ?o } } } }",
+            "SELECT ?s WHERE { ?s ?p ?o } # note\nVALUES ?s { <a> } SERVICE <http://x/> {}",
+            "SELECT ?s WHERE { FILTER(?a<?b)SERVICE<http://127.0.0.1/>{ ?s ?p ?o } }",
+            "ASK { SERVICE <http://127.0.0.1/> { ?s ?p ?o } }",
+            "CONSTRUCT { ?s ?p ?o } WHERE { SERVICE <http://127.0.0.1/> { ?s ?p ?o } }",
+        )
+        for query in federated_queries:
+            with self.subTest(query=query):
+                with self.assertRaises(InvalidInputError):
+                    validate_sparql_query(query)
+
+    def test_the_word_service_is_allowed_as_data(self):
+        harmless_queries = (
+            'SELECT ?s WHERE { ?s rdfs:label "SERVICE <http://x/>" }',
+            "SELECT ?s WHERE { ?s a <http://dbpedia.org/ontology/SERVICE> }",
+            "SELECT ?service WHERE { ?service a dbo:Company }",
+            "SELECT ?s WHERE { ?s dbo:service ?o . ?s service:type ?t }",
+            "SELECT ?s WHERE { ?s ?p ?o } # no SERVICE here",
+        )
+        for query in harmless_queries:
+            with self.subTest(query=query):
+                self.assertEqual(validate_sparql_query(query), query)
 
     def test_rejects_update_operations(self):
         malicious_queries = (
@@ -209,6 +261,11 @@ class ExtractSparqlTests(unittest.TestCase):
                 with self.assertRaises(QueryGenerationError):
                     extract_sparql(bad_reply)
 
+    def test_rejects_generated_service_call(self):
+        reply = "```sparql\nSELECT ?s WHERE { SERVICE <http://127.0.0.1/> { ?s ?p ?o } }\n```"
+        with self.assertRaises(QueryGenerationError):
+            extract_sparql(reply)
+
     def test_rejects_oversized_reply(self):
         with self.assertRaises(QueryGenerationError):
             extract_sparql(SIMPLE_QUERY + " " * MAX_MODEL_REPLY_LENGTH)
@@ -279,7 +336,15 @@ class ExecuteSparqlTests(unittest.TestCase):
         client = make_sparql_client(make_bindings_response([]))
         with self.assertRaises(InvalidInputError):
             execute_sparql("DROP ALL", client)
-        client.queryAndConvert.assert_not_called()
+        client.query.assert_not_called()
+
+    def test_service_query_never_reaches_the_endpoint(self):
+        client = make_sparql_client(make_bindings_response([]))
+        with self.assertRaises(InvalidInputError):
+            execute_sparql(
+                "SELECT ?s WHERE { SERVICE SILENT ?endpoint { ?s ?p ?o } }", client
+            )
+        client.query.assert_not_called()
 
     def test_network_failure_becomes_domain_error(self):
         for error in (URLError("down"), TimeoutError("slow")):
@@ -288,12 +353,12 @@ class ExecuteSparqlTests(unittest.TestCase):
                     execute_sparql(SIMPLE_QUERY, make_sparql_client(error=error))
 
     def test_graph_forms_request_rdf_and_others_request_json(self):
-        self.assertEqual(choose_return_format("DESCRIBE dbr:Paris"), RDFXML)
+        self.assertEqual(choose_return_format("DESCRIBE dbr:Paris"), TURTLE)
         self.assertEqual(
             choose_return_format(
                 "PREFIX ex: <http://x/> # note\nconstruct { ?s ?p ?o } WHERE { ?s ?p ?o }"
             ),
-            RDFXML,
+            TURTLE,
         )
         self.assertEqual(choose_return_format(SIMPLE_QUERY), JSON)
         self.assertEqual(choose_return_format("ASK { ?s ?p ?o }"), JSON)
@@ -339,6 +404,87 @@ class ExecuteSparqlTests(unittest.TestCase):
                 with self.assertRaises(QueryExecutionError):
                     execute_sparql(SIMPLE_QUERY, make_sparql_client(bad_response))
 
+    def test_json_ld_response_is_rejected_without_any_secondary_fetch(self):
+        json_ld = {
+            "@context": "http://127.0.0.1:9876/internal-context.jsonld",
+            "@id": "http://x/s",
+            "name": "Virchow",
+        }
+        body = json.dumps(json_ld).encode("utf-8")
+        queries = (SIMPLE_QUERY, "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1")
+        content_types = ("application/ld+json", "APPLICATION/LD+JSON; charset=utf-8")
+        for query in queries:
+            for content_type in content_types:
+                with self.subTest(query=query, content_type=content_type):
+                    self.assert_rejected_without_loading(query, body, content_type)
+
+    def test_json_ld_mislabelled_as_turtle_is_rejected_without_any_fetch(self):
+        body = b'{"@context": "http://127.0.0.1:9876/c.jsonld", "@id": "http://x/s"}'
+        with mock.patch("urllib.request.OpenerDirector.open") as open_url:
+            with mock.patch("socket.create_connection") as connect:
+                with self.assertRaises(QueryExecutionError):
+                    execute_sparql(
+                        "DESCRIBE dbr:Paris", make_sparql_client(body, content_type="text/turtle")
+                    )
+        open_url.assert_not_called()
+        connect.assert_not_called()
+
+    def assert_rejected_without_loading(self, query, body, content_type):
+        client = make_sparql_client(body, content_type=content_type)
+        with mock.patch("rdflib.Graph.parse") as parse_graph:
+            with mock.patch("urllib.request.OpenerDirector.open") as open_url:
+                with mock.patch("socket.create_connection") as connect:
+                    with mock.patch("builtins.open") as open_file:
+                        with self.assertRaises(QueryExecutionError):
+                            execute_sparql(query, client)
+        for loader in (parse_graph, open_url, connect, open_file):
+            loader.assert_not_called()
+
+    def test_unrequested_content_types_are_rejected(self):
+        graph_query = "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1"
+        turtle_body = b"<http://x/s> <http://x/p> <http://x/o> ."
+        json_body = json.dumps(make_bindings_response([{"name": "A"}])).encode("utf-8")
+        mismatches = (
+            (SIMPLE_QUERY, json_body, "application/rdf+xml"),
+            (SIMPLE_QUERY, json_body, "text/html"),
+            (SIMPLE_QUERY, json_body, ""),
+            (SIMPLE_QUERY, turtle_body, "text/turtle"),
+            (graph_query, turtle_body, "application/rdf+xml"),
+            (graph_query, json_body, "application/sparql-results+json"),
+            (graph_query, turtle_body, "text/turtle-evil"),
+        )
+        for query, body, content_type in mismatches:
+            with self.subTest(query=query, content_type=content_type):
+                client = make_sparql_client(body, content_type=content_type)
+                with self.assertRaises(QueryExecutionError):
+                    execute_sparql(query, client)
+
+    def test_missing_content_type_header_is_rejected(self):
+        client = make_sparql_client(make_bindings_response([{"name": "A"}]))
+        client.query.return_value.info.return_value = {}
+        with self.assertRaises(QueryExecutionError):
+            execute_sparql(SIMPLE_QUERY, client)
+
+    def test_content_type_parameters_and_case_are_ignored(self):
+        rows = [{"name": "Rudolf Virchow"}]
+        client = make_sparql_client(
+            make_bindings_response(rows),
+            content_type="Application/SPARQL-Results+JSON; charset=UTF-8",
+        )
+        self.assertEqual(execute_sparql(SIMPLE_QUERY, client), rows)
+
+    def test_oversized_response_is_rejected_and_read_is_bounded(self):
+        valid_json = json.dumps(make_bindings_response([{"name": "A"}])).encode("utf-8")
+        client = make_sparql_client(valid_json + b" " * MAX_RESPONSE_BYTES)
+        with self.assertRaises(QueryExecutionError):
+            execute_sparql(SIMPLE_QUERY, client)
+        client.http_response.read.assert_called_once_with(MAX_RESPONSE_BYTES + 1)
+
+    def test_response_is_always_closed(self):
+        client = make_sparql_client(make_bindings_response([]))
+        execute_sparql(SIMPLE_QUERY, client)
+        client.http_response.close.assert_called_once_with()
+
     def test_malformed_responses_are_errors(self):
         for bad_response in (None, b"<html>", {}, {"results": {}}):
             with self.subTest(bad_response=bad_response):
@@ -368,6 +514,49 @@ class ValidateResultsTests(unittest.TestCase):
         for results in invalid_inputs:
             with self.subTest(results=results):
                 self.assertFalse(validate_results(results))
+
+
+class DisplayTests(unittest.TestCase):
+    HOSTILE_TEXT = "\x1b[2J\x1b[Hspoofed\rover\x07\x00\x7f\x9b31m\u202egnp.exe\u2028x"
+    FORBIDDEN_CHARACTERS = "\x1b\r\x07\x00\x7f\x9b\u202e\u2028"
+
+    def capture(self, write, *arguments):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            write(*arguments)
+        return output.getvalue()
+
+    def assert_harmless(self, output):
+        for character in self.FORBIDDEN_CHARACTERS:
+            self.assertNotIn(character, output)
+        self.assertIn("\\x1b[2J", output)
+        self.assertIn("\\x0d", output)
+        self.assertIn("\\u202e", output)
+        self.assertIn("spoofed", output)
+
+    def test_row_values_and_names_are_escaped(self):
+        rows = [{"name": self.HOSTILE_TEXT}, {self.HOSTILE_TEXT: "value"}]
+        output = self.capture(display_results, rows)
+        self.assert_harmless(output)
+        self.assertEqual(output.count("\n"), len(rows))
+
+    def test_newline_in_a_value_cannot_fake_a_row(self):
+        self.assertEqual(format_row({"name": "A\nname: fake\tB"}), "name: A\\x0aname: fake\\x09B")
+        self.assertEqual(format_row({"a\nb\x1b": "value"}), "a\\x0ab\\x1b: value")
+
+    def test_generated_query_text_is_escaped_but_keeps_its_lines(self):
+        output = self.capture(write_line, f"SELECT ?s\r\nWHERE {{\n\t?s ?p ?o }} # {self.HOSTILE_TEXT}")
+        self.assert_harmless(output.replace("SELECT ?s\nWHERE {\n\t?s", ""))
+        self.assertTrue(output.startswith("SELECT ?s\nWHERE {\n\t?s ?p ?o }"))
+
+    def test_plain_unicode_empty_and_non_text_values_pass_through(self):
+        self.assertEqual(format_row({"name": "Pathologie für 病理学 🔬"}), "name: Pathologie für 病理学 🔬")
+        self.assertEqual(format_row({"name": ""}), "name: ")
+        self.assertEqual(format_row({"count": 5, "none": None}), "count: 5 | none: None")
+        self.assertEqual(self.capture(display_results, []), "No results found.\n")
+
+    def test_large_value(self):
+        self.assertEqual(len(format_row({"v": "\x1b" * 100000})), len("v: ") + 4 * 100000)
 
 
 class JsonLogFormatterTests(unittest.TestCase):

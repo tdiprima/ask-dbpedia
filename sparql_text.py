@@ -3,7 +3,12 @@
 import re
 
 from errors import InvalidInputError, QueryGenerationError
-from sparql_scanner import READ_ONLY_QUERY_FORMS, find_complete_queries, find_query_form
+from sparql_scanner import (
+    READ_ONLY_QUERY_FORMS,
+    find_complete_queries,
+    find_forbidden_keyword,
+    find_query_form,
+)
 
 MAX_NATURAL_QUERY_LENGTH = 1000
 MAX_SPARQL_QUERY_LENGTH = 10000
@@ -58,6 +63,9 @@ def validate_sparql_query(sparql_query):
             f"Only {', '.join(READ_ONLY_QUERY_FORMS)} queries are allowed, "
             f"got {query_form or 'nothing recognizable'!r}"
         )
+    forbidden_keyword = find_forbidden_keyword(trimmed_query)
+    if forbidden_keyword:
+        raise InvalidInputError(f"{forbidden_keyword} is not allowed in queries")
     return trimmed_query
 
 

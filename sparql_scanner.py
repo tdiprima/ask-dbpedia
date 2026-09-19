@@ -12,6 +12,8 @@ Token = namedtuple("Token", ["kind", "text", "start", "end"])
 READ_ONLY_QUERY_FORMS = ("SELECT", "ASK", "DESCRIBE", "CONSTRUCT")
 GRAPH_QUERY_FORMS = ("DESCRIBE", "CONSTRUCT")
 DECLARATION_KEYWORDS = ("PREFIX", "BASE")
+# SERVICE makes the endpoint send requests to another server of the query's choosing.
+FORBIDDEN_KEYWORDS = ("SERVICE",)
 
 # Words that may appear outside the { } groups of a query.
 OUTER_KEYWORDS = frozenset(
@@ -91,6 +93,18 @@ def find_query_form(sparql_query):
     if index >= len(tokens) or tokens[index].kind != "name":
         return ""
     return tokens[index].text.upper()
+
+
+def find_forbidden_keyword(sparql_query):
+    """Return the first forbidden keyword used anywhere in the query, or "".
+
+    Strings, IRIs, comments, variables, and prefixed names are separate
+    tokens, so a harmless "service" inside them does not match.
+    """
+    for token in tokenize(sparql_query):
+        if is_keyword(token, FORBIDDEN_KEYWORDS):
+            return token.text.upper()
+    return ""
 
 
 def find_group_end(tokens, open_index):
