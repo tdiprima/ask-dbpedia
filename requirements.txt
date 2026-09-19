@@ -1,6 +1,0 @@
-openai
-sparqlwrapper
-requests
-pandas
-langchain
-llama-index
