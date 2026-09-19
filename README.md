@@ -33,24 +33,24 @@ A curated set of five pathology queries also ships ready to run: common diseases
 
 ## Get Started
 
-Install dependencies:
+Install dependencies with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 Run with OpenAI:
 
 ```bash
 export OPENAI_API_KEY="your-key"
-python automate_queries.py
+uv run python automate_queries.py
 ```
 
 Run with a local Ollama model, no API key needed:
 
 ```bash
 ollama pull mistral
-python automate_with_ollama.py
+uv run python automate_with_ollama.py
 ```
 
 Edit `natural_query` in either script to ask your own question.
@@ -58,14 +58,14 @@ Edit `natural_query` in either script to ask your own question.
 Run the pre-defined pathology queries with no LLM:
 
 ```bash
-python run_pathology_queries.py
-python pathology.py
+uv run python run_pathology_queries.py
+uv run python pathology.py
 ```
 
 Run the tests:
 
 ```bash
-python -m unittest test_queries
+uv run python -m unittest test_queries
 ```
 
 Optional environment variables:
