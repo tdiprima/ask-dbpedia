@@ -65,7 +65,7 @@ uv run python pathology.py
 Run the tests:
 
 ```bash
-uv run python -m unittest test_queries
+uv run python -m unittest discover
 ```
 
 Optional environment variables:

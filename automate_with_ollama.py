@@ -37,7 +37,16 @@ def generate_sparql_with_ollama(question, client=None):
     ) as error:
         logger.error("ollama_request_failed model=%s error=%s", model, error)
         raise QueryGenerationError(f"Ollama request failed: {error}") from error
-    return extract_sparql(response["message"]["content"])
+    return extract_sparql(read_reply_text(response))
+
+
+def read_reply_text(response):
+    """Return the reply text from an Ollama chat response."""
+    try:
+        return response["message"]["content"]
+    except (KeyError, TypeError) as error:
+        logger.error("ollama_reply_malformed error=%r", error)
+        raise QueryGenerationError("Ollama reply has no message content") from error
 
 
 def main():

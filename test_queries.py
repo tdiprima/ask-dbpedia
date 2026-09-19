@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import unittest
-from types import SimpleNamespace
 from unittest import mock
 from urllib.error import URLError
 
@@ -26,6 +25,12 @@ from errors import (
 )
 from display import display_results, format_row, write_line
 from executor import MAX_RESPONSE_BYTES, choose_return_format, execute_sparql
+from fakes import (
+    SIMPLE_QUERY,
+    make_bindings_response,
+    make_openai_client,
+    make_sparql_client,
+)
 from logging_setup import JsonLogFormatter
 from pipeline import run_pipeline
 from query_generator import generate_sparql
@@ -41,51 +46,7 @@ from sparql_text import (
 from validator import validate_results
 import config
 
-SIMPLE_QUERY = "SELECT ?name WHERE { ?person foaf:name ?name } LIMIT 5"
 HAS_OPENAI_API_KEY = bool(os.environ.get("OPENAI_API_KEY", "").strip())
-
-
-def make_openai_client(reply_text=None, error=None, choices=None):
-    """Build a fake OpenAI client that returns one canned reply."""
-    if choices is None:
-        choices = [SimpleNamespace(message=SimpleNamespace(content=reply_text))]
-    create = mock.Mock(return_value=SimpleNamespace(choices=choices), side_effect=error)
-    completions = SimpleNamespace(create=create)
-    return SimpleNamespace(chat=SimpleNamespace(completions=completions))
-
-
-def encode_fake_response(response):
-    """Return (body bytes, content type) the way an endpoint would send the response."""
-    if isinstance(response, Graph):
-        return response.serialize(format="turtle").encode("utf-8"), "text/turtle"
-    if isinstance(response, bytes):
-        return response, "application/sparql-results+json"
-    return json.dumps(response).encode("utf-8"), "application/sparql-results+json"
-
-
-def make_sparql_client(response=None, error=None, content_type=None):
-    """Build a fake SPARQLWrapper client that serves one raw response."""
-    body, default_content_type = encode_fake_response(response)
-    if content_type is None:
-        content_type = default_content_type
-    http_response = mock.Mock()
-    http_response.read.return_value = body
-    result = SimpleNamespace(
-        info=mock.Mock(return_value={"content-type": content_type}),
-        response=http_response,
-    )
-    return SimpleNamespace(
-        query=mock.Mock(return_value=result, side_effect=error), http_response=http_response
-    )
-
-
-def make_bindings_response(rows):
-    """Wrap rows in the SPARQL JSON results format."""
-    bindings = [
-        {name: {"type": "literal", "value": value} for name, value in row.items()}
-        for row in rows
-    ]
-    return {"results": {"bindings": bindings}}
 
 
 class NaturalQueryValidationTests(unittest.TestCase):
@@ -326,6 +287,25 @@ class ExecuteSparqlTests(unittest.TestCase):
 
     def test_ask_response(self):
         self.assertEqual(flatten_response({"boolean": True}), [{"boolean": "True"}])
+
+    def test_ask_false_is_a_valid_negative_answer(self):
+        client = make_sparql_client({"head": {}, "boolean": False})
+        rows = execute_sparql("ASK { dbr:Paris a dbo:Planet }", client)
+        self.assertEqual(rows, [{"boolean": "False"}])
+        self.assertTrue(validate_results(rows))
+
+    def test_ask_answers_stay_distinct(self):
+        self.assertNotEqual(
+            flatten_response({"boolean": True}), flatten_response({"boolean": False})
+        )
+
+    def test_malformed_ask_answers_are_errors(self):
+        bad_answers = (None, "true", "false", "", 1, 0, 1.0, {"value": True}, [True], [])
+        for bad_answer in bad_answers:
+            with self.subTest(bad_answer=bad_answer):
+                client = make_sparql_client({"head": {}, "boolean": bad_answer})
+                with self.assertRaises(QueryExecutionError):
+                    execute_sparql("ASK { ?s ?p ?o }", client)
 
     def test_large_result_set(self):
         rows = [{"name": f"person {index}"} for index in range(10000)]

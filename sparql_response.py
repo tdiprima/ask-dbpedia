@@ -8,7 +8,6 @@ external resources (JSON-LD and RDF/XML can, so they are refused).
 import json
 
 from rdflib import Graph
-from rdflib.plugins.parsers.notation3 import BadSyntax
 
 from errors import QueryExecutionError
 from sparql_scanner import GRAPH_QUERY_FORMS
@@ -58,6 +57,13 @@ def flatten_binding(binding):
     return row
 
 
+def flatten_boolean(answer):
+    """Convert an ASK answer into a row. Only a real JSON true or false is accepted."""
+    if not isinstance(answer, bool):
+        raise QueryExecutionError("SPARQL ASK response has a boolean that is not true or false")
+    return {"boolean": str(answer)}
+
+
 def flatten_response(response):
     """Convert a SPARQL JSON response or RDF graph into a list of rows."""
     if isinstance(response, Graph):
@@ -65,7 +71,7 @@ def flatten_response(response):
     if not isinstance(response, dict):
         raise QueryExecutionError("SPARQL endpoint returned an unsupported response")
     if "boolean" in response:
-        return [{"boolean": str(response["boolean"])}]
+        return [flatten_boolean(response["boolean"])]
     results = response.get("results")
     if not isinstance(results, dict):
         raise QueryExecutionError("SPARQL response has no results object")
@@ -88,7 +94,10 @@ def parse_turtle_body(body):
     graph = Graph()
     try:
         graph.parse(data=body, format="turtle")
-    except (BadSyntax, ValueError) as error:
+    # Broad on purpose. On hostile input rdflib raises BadSyntax, AssertionError,
+    # IndexError and others, so no specific list is safe. Nothing is swallowed:
+    # every failure becomes a QueryExecutionError for the caller.
+    except Exception as error:
         raise QueryExecutionError(f"SPARQL response is not valid Turtle: {error}") from error
     return graph
 
