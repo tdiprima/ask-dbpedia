@@ -278,6 +278,7 @@ dependencies = [
     { name = "httpx" },
     { name = "ollama" },
     { name = "openai" },
+    { name = "rdflib" },
     { name = "sparqlwrapper" },
 ]
 
@@ -286,6 +287,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "ollama", specifier = ">=0.6.2" },
     { name = "openai", specifier = ">=3.16.2" },
+    { name = "rdflib", specifier = ">=7.6.0" },
     { name = "sparqlwrapper", specifier = ">=2.0.0" },
 ]
 

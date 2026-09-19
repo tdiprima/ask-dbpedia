@@ -4,6 +4,8 @@ Offline tests use fakes. Live tests call OpenAI and DBPedia, and only run
 when OPENAI_API_KEY is set (as it is in CI).
 """
 
+import json
+import logging
 import os
 import unittest
 from types import SimpleNamespace
@@ -11,6 +13,8 @@ from unittest import mock
 from urllib.error import URLError
 
 import openai
+from rdflib import Graph, Literal, URIRef
+from SPARQLWrapper import JSON, RDFXML
 
 from errors import (
     ConfigurationError,
@@ -18,10 +22,12 @@ from errors import (
     QueryExecutionError,
     QueryGenerationError,
 )
-from executor import execute_sparql, flatten_response
+from executor import choose_return_format, execute_sparql, flatten_response
+from logging_setup import JsonLogFormatter
 from pipeline import run_pipeline
 from query_generator import generate_sparql
 from sparql_text import (
+    MAX_MODEL_REPLY_LENGTH,
     MAX_NATURAL_QUERY_LENGTH,
     MAX_SPARQL_QUERY_LENGTH,
     extract_sparql,
@@ -92,6 +98,28 @@ class SparqlValidationTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertEqual(validate_sparql_query(query), query.strip())
 
+    def test_accepts_comments_around_declarations(self):
+        commented_queries = (
+            "# leading comment\n" + SIMPLE_QUERY,
+            "PREFIX ex: <http://example.org/> # namespace\n" + SIMPLE_QUERY,
+            "PREFIX ex: <http://example.org/ns#> # hash inside the IRI\n" + SIMPLE_QUERY,
+            "BASE <http://x/> # base\n# more\nPREFIX : <http://y/#>\n" + SIMPLE_QUERY,
+        )
+        for query in commented_queries:
+            with self.subTest(query=query):
+                self.assertEqual(validate_sparql_query(query), query.strip())
+
+    def test_comment_cannot_hide_an_update(self):
+        malicious_queries = (
+            "# SELECT ?s WHERE { ?s ?p ?o }\nDROP ALL",
+            "PREFIX ex: <http://example.org/> # SELECT\nDELETE WHERE { ?s ?p ?o }",
+            "PREFIX ex: <http://x/#> DROP ALL # > SELECT ?s WHERE { ?s ?p ?o }",
+        )
+        for query in malicious_queries:
+            with self.subTest(query=query):
+                with self.assertRaises(InvalidInputError):
+                    validate_sparql_query(query)
+
     def test_rejects_update_operations(self):
         malicious_queries = (
             "DROP GRAPH <http://dbpedia.org>",
@@ -129,6 +157,61 @@ class ExtractSparqlTests(unittest.TestCase):
 
     def test_strips_leading_chatter_without_fence(self):
         self.assertEqual(extract_sparql(f"Query:\n{SIMPLE_QUERY}"), SIMPLE_QUERY)
+
+    def test_prose_containing_a_query_keyword_is_dropped(self):
+        replies = (
+            f"Here is the SELECT query:\n{SIMPLE_QUERY}",
+            f"I will describe the select query you asked for.\n{SIMPLE_QUERY}",
+            f"The PREFIX lines are omitted.\n{SIMPLE_QUERY}",
+        )
+        for reply in replies:
+            with self.subTest(reply=reply):
+                self.assertEqual(extract_sparql(reply), SIMPLE_QUERY)
+
+    def test_trailing_prose_is_dropped(self):
+        replies = (
+            f"{SIMPLE_QUERY}\nThis query returns five names.",
+            f"{SIMPLE_QUERY}\n\nHope it helps!",
+            f"```\n{SIMPLE_QUERY}\nNote: uses foaf.\n```",
+            f"{SIMPLE_QUERY} # trailing comment",
+        )
+        for reply in replies:
+            with self.subTest(reply=reply):
+                self.assertEqual(extract_sparql(reply), SIMPLE_QUERY)
+
+    def test_keeps_the_whole_query(self):
+        complete_queries = (
+            "PREFIX dbo: <http://dbpedia.org/ontology/> # ontology\n" + SIMPLE_QUERY,
+            "SELECT ?s (COUNT(?o) AS ?total) WHERE { ?s ?p ?o } "
+            "GROUP BY ?s HAVING (COUNT(?o) > 2) ORDER BY DESC(?total) LIMIT 5 OFFSET 10",
+            "SELECT ?s WHERE { ?s rdfs:label \"a } brace # not a comment\"@en } LIMIT 1",
+            "SELECT ?s WHERE { { ?s a dbo:City } UNION { ?s a dbo:Town } } LIMIT 3",
+            "SELECT ?s WHERE { ?s a ?type } VALUES ?type { dbo:City dbo:Town }",
+            "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1",
+            "ASK { dbr:Paris a dbo:City }",
+            "DESCRIBE dbr:Paris",
+            "DESCRIBE <http://dbpedia.org/resource/Paris#section>",
+        )
+        for query in complete_queries:
+            with self.subTest(query=query):
+                self.assertEqual(extract_sparql(f"Query:\n{query}\nDone."), query)
+
+    def test_rejects_incomplete_or_ambiguous_queries(self):
+        bad_replies = (
+            "SELECT ?name WHERE { ?person foaf:name ?name",
+            "SELECT ?name",
+            "Use a SELECT statement for that.",
+            "DESCRIBE",
+            "SELECT ?a WHERE { ?a ?b ?c } SELECT ?d WHERE { ?d ?e ?f }",
+        )
+        for bad_reply in bad_replies:
+            with self.subTest(bad_reply=bad_reply):
+                with self.assertRaises(QueryGenerationError):
+                    extract_sparql(bad_reply)
+
+    def test_rejects_oversized_reply(self):
+        with self.assertRaises(QueryGenerationError):
+            extract_sparql(SIMPLE_QUERY + " " * MAX_MODEL_REPLY_LENGTH)
 
     def test_rejects_empty_none_and_prose_only(self):
         for bad_reply in ("", "   ", None, "I cannot answer that."):
@@ -204,6 +287,58 @@ class ExecuteSparqlTests(unittest.TestCase):
                 with self.assertRaises(QueryExecutionError):
                     execute_sparql(SIMPLE_QUERY, make_sparql_client(error=error))
 
+    def test_graph_forms_request_rdf_and_others_request_json(self):
+        self.assertEqual(choose_return_format("DESCRIBE dbr:Paris"), RDFXML)
+        self.assertEqual(
+            choose_return_format(
+                "PREFIX ex: <http://x/> # note\nconstruct { ?s ?p ?o } WHERE { ?s ?p ?o }"
+            ),
+            RDFXML,
+        )
+        self.assertEqual(choose_return_format(SIMPLE_QUERY), JSON)
+        self.assertEqual(choose_return_format("ASK { ?s ?p ?o }"), JSON)
+
+    def test_construct_graph_becomes_triple_rows(self):
+        graph = Graph()
+        graph.add((URIRef("http://x/s"), URIRef("http://x/p"), Literal("Virchow")))
+        rows = execute_sparql(
+            "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1", make_sparql_client(graph)
+        )
+        expected_row = {
+            "subject": "http://x/s",
+            "predicate": "http://x/p",
+            "object": "Virchow",
+        }
+        self.assertEqual(rows, [expected_row])
+        self.assertTrue(validate_results(rows))
+
+    def test_graph_rows_are_sorted(self):
+        graph = Graph()
+        for name in ("c", "a", "b"):
+            graph.add((URIRef(f"http://x/{name}"), URIRef("http://x/p"), Literal(name)))
+        subjects = [row["subject"] for row in flatten_response(graph)]
+        self.assertEqual(subjects, ["http://x/a", "http://x/b", "http://x/c"])
+
+    def test_empty_graph_gives_empty_list(self):
+        self.assertEqual(flatten_response(Graph()), [])
+
+    def test_malformed_nested_structures_are_errors(self):
+        bad_responses = (
+            {"results": None},
+            {"results": []},
+            {"results": {"bindings": None}},
+            {"results": {"bindings": "rows"}},
+            {"results": {"bindings": [None]}},
+            {"results": {"bindings": [{"name": None}]}},
+            {"results": {"bindings": [{"name": "Virchow"}]}},
+            {"results": {"bindings": [{"name": {"value": None}}]}},
+            {"results": {"bindings": [{"name": {"value": 5}}]}},
+        )
+        for bad_response in bad_responses:
+            with self.subTest(bad_response=bad_response):
+                with self.assertRaises(QueryExecutionError):
+                    execute_sparql(SIMPLE_QUERY, make_sparql_client(bad_response))
+
     def test_malformed_responses_are_errors(self):
         for bad_response in (None, b"<html>", {}, {"results": {}}):
             with self.subTest(bad_response=bad_response):
@@ -233,6 +368,37 @@ class ValidateResultsTests(unittest.TestCase):
         for results in invalid_inputs:
             with self.subTest(results=results):
                 self.assertFalse(validate_results(results))
+
+
+class JsonLogFormatterTests(unittest.TestCase):
+    def format_message(self, message, *arguments, exc_info=None):
+        record = logging.LogRecord(
+            "executor", logging.ERROR, __file__, 1, message, arguments, exc_info
+        )
+        return JsonLogFormatter().format(record)
+
+    def test_output_is_one_line_of_valid_json(self):
+        hostile_text = 'bad "quote"\nnew line \\ back\tslash {"event": "fake"}'
+        line = self.format_message("sparql_execution_failed error=%s", hostile_text)
+        self.assertNotIn("\n", line)
+        fields = json.loads(line)
+        self.assertEqual(fields["event"], f"sparql_execution_failed error={hostile_text}")
+        self.assertEqual(fields["level"], "ERROR")
+        self.assertEqual(fields["component"], "executor")
+        self.assertIn("time", fields)
+
+    def test_empty_and_non_ascii_messages(self):
+        self.assertEqual(json.loads(self.format_message(""))["event"], "")
+        self.assertEqual(json.loads(self.format_message("Pathologie für"))["event"], "Pathologie für")
+
+    def test_exception_is_included(self):
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            import sys
+
+            line = self.format_message("failed", exc_info=sys.exc_info())
+        self.assertIn("ValueError: boom", json.loads(line)["exception"])
 
 
 class ConfigTests(unittest.TestCase):

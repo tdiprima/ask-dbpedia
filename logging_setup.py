@@ -1,14 +1,26 @@
 """Logging configuration shared by every command line script."""
 
+import json
 import logging
 
 from config import get_log_level
 from errors import ConfigurationError
 
-LOG_FORMAT = (
-    '{"time": "%(asctime)s", "level": "%(levelname)s", '
-    '"component": "%(name)s", "event": "%(message)s"}'
-)
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Serialize each log record as one JSON object per line."""
+
+    def format(self, record):
+        fields = {
+            "time": self.formatTime(record),
+            "level": record.levelname,
+            "component": record.name,
+            "event": record.getMessage(),
+        }
+        if record.exc_info:
+            fields["exception"] = self.formatException(record.exc_info)
+        return json.dumps(fields)
 
 
 def configure_logging():
@@ -17,4 +29,6 @@ def configure_logging():
     level = logging.getLevelName(level_name)
     if not isinstance(level, int):
         raise ConfigurationError(f"LOG_LEVEL is not a valid level: {level_name!r}")
-    logging.basicConfig(level=level, format=LOG_FORMAT)
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonLogFormatter())
+    logging.basicConfig(level=level, handlers=[handler])

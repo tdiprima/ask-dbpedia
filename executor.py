@@ -4,13 +4,18 @@ import logging
 import sys
 from urllib.error import URLError
 
-from SPARQLWrapper import JSON, SPARQLWrapper
+# Only the exception class is used, to catch RDF/XML parse failures. Nothing is parsed here.
+from xml.sax import SAXException  # nosec B406
+
+from rdflib import Graph
+from SPARQLWrapper import JSON, RDFXML, SPARQLWrapper
 from SPARQLWrapper.SPARQLExceptions import SPARQLWrapperException
 
 from config import get_dbpedia_endpoint, get_request_timeout_seconds
 from display import display_results
 from errors import Nl2SparqlError, QueryExecutionError
 from logging_setup import configure_logging
+from sparql_scanner import GRAPH_QUERY_FORMS, find_query_form
 from sparql_text import validate_sparql_query
 
 logger = logging.getLogger(__name__)
@@ -26,28 +31,62 @@ SELECT ?name WHERE {
 """
 
 
+def choose_return_format(sparql_query):
+    """CONSTRUCT and DESCRIBE return an RDF graph. SELECT and ASK return JSON."""
+    if find_query_form(sparql_query) in GRAPH_QUERY_FORMS:
+        return RDFXML
+    return JSON
+
+
 def create_sparql_client(sparql_query):
-    """Build a SPARQLWrapper configured for one JSON query."""
+    """Build a SPARQLWrapper configured for one query."""
     client = SPARQLWrapper(get_dbpedia_endpoint(), agent=USER_AGENT)
     client.setTimeout(get_request_timeout_seconds())
-    client.setReturnFormat(JSON)
+    client.setReturnFormat(choose_return_format(sparql_query))
     client.setQuery(sparql_query)
     return client
 
 
+def flatten_graph(graph):
+    """Convert an RDF graph into a sorted list of subject/predicate/object rows."""
+    # A graph is an unordered set. Sort so the same result always prints the same way.
+    triples = sorted(tuple(str(term) for term in triple) for triple in graph)
+    return [
+        {"subject": subject, "predicate": predicate, "object": rdf_object}
+        for subject, predicate, rdf_object in triples
+    ]
+
+
+def flatten_binding(binding):
+    """Convert one SPARQL JSON binding into a {variable: value} row."""
+    if not isinstance(binding, dict):
+        raise QueryExecutionError("SPARQL response has a binding that is not an object")
+    row = {}
+    for name, cell in binding.items():
+        if not isinstance(cell, dict):
+            raise QueryExecutionError(f"SPARQL response cell {name!r} is not an object")
+        value = cell.get("value", "")
+        if not isinstance(value, str):
+            raise QueryExecutionError(f"SPARQL response cell {name!r} has a non-text value")
+        row[name] = value
+    return row
+
+
 def flatten_response(response):
-    """Convert a SPARQL JSON response into a list of {variable: value} rows."""
+    """Convert a SPARQL JSON response or RDF graph into a list of rows."""
+    if isinstance(response, Graph):
+        return flatten_graph(response)
     if not isinstance(response, dict):
-        raise QueryExecutionError("SPARQL endpoint returned a non-JSON response")
+        raise QueryExecutionError("SPARQL endpoint returned an unsupported response")
     if "boolean" in response:
         return [{"boolean": str(response["boolean"])}]
-    bindings = response.get("results", {}).get("bindings")
-    if bindings is None:
-        raise QueryExecutionError("SPARQL response has no results.bindings")
-    return [
-        {name: cell.get("value", "") for name, cell in binding.items()}
-        for binding in bindings
-    ]
+    results = response.get("results")
+    if not isinstance(results, dict):
+        raise QueryExecutionError("SPARQL response has no results object")
+    bindings = results.get("bindings")
+    if not isinstance(bindings, list):
+        raise QueryExecutionError("SPARQL response has no results.bindings list")
+    return [flatten_binding(binding) for binding in bindings]
 
 
 def execute_sparql(sparql_query, client=None):
@@ -57,7 +96,13 @@ def execute_sparql(sparql_query, client=None):
         client = create_sparql_client(valid_query)
     try:
         response = client.queryAndConvert()
-    except (SPARQLWrapperException, URLError, TimeoutError, ValueError) as error:
+    except (
+        SPARQLWrapperException,
+        URLError,
+        TimeoutError,
+        ValueError,
+        SAXException,
+    ) as error:
         logger.error("sparql_execution_failed error=%s", error)
         raise QueryExecutionError(f"SPARQL execution failed: {error}") from error
     results = flatten_response(response)

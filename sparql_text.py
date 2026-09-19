@@ -3,11 +3,11 @@
 import re
 
 from errors import InvalidInputError, QueryGenerationError
+from sparql_scanner import READ_ONLY_QUERY_FORMS, find_complete_queries, find_query_form
 
 MAX_NATURAL_QUERY_LENGTH = 1000
 MAX_SPARQL_QUERY_LENGTH = 10000
-
-READ_ONLY_QUERY_FORMS = ("SELECT", "ASK", "DESCRIBE", "CONSTRUCT")
+MAX_MODEL_REPLY_LENGTH = 50000
 
 SYSTEM_PROMPT = (
     "You translate natural language questions into SPARQL queries for DBPedia. "
@@ -17,13 +17,6 @@ SYSTEM_PROMPT = (
 )
 
 CODE_FENCE_PATTERN = re.compile(r"```(?:sparql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-QUERY_START_PATTERN = re.compile(
-    r"\b(PREFIX|BASE|SELECT|ASK|DESCRIBE|CONSTRUCT)\b", re.IGNORECASE
-)
-DECLARATION_PATTERN = re.compile(
-    r"\s*(PREFIX\s+[^\s:]*:\s*<[^>]*>|BASE\s+<[^>]*>)", re.IGNORECASE
-)
-FIRST_WORD_PATTERN = re.compile(r"\s*([A-Za-z]+)")
 
 
 def validate_natural_query(natural_query):
@@ -46,19 +39,6 @@ def build_chat_messages(natural_query):
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": validate_natural_query(natural_query)},
     ]
-
-
-def find_query_form(sparql_query):
-    """Return the upper-case query form that follows any PREFIX/BASE lines."""
-    remaining_text = sparql_query
-    declaration = DECLARATION_PATTERN.match(remaining_text)
-    while declaration:
-        remaining_text = remaining_text[declaration.end():]
-        declaration = DECLARATION_PATTERN.match(remaining_text)
-    first_word = FIRST_WORD_PATTERN.match(remaining_text)
-    if not first_word:
-        return ""
-    return first_word.group(1).upper()
 
 
 def validate_sparql_query(sparql_query):
@@ -85,14 +65,24 @@ def extract_sparql(model_reply):
     """Pull the SPARQL query out of a language model reply."""
     if not isinstance(model_reply, str) or not model_reply.strip():
         raise QueryGenerationError("Language model returned an empty reply")
+    if len(model_reply) > MAX_MODEL_REPLY_LENGTH:
+        raise QueryGenerationError(
+            f"Language model reply exceeds {MAX_MODEL_REPLY_LENGTH} characters"
+        )
     candidate_text = model_reply
     fenced_block = CODE_FENCE_PATTERN.search(model_reply)
     if fenced_block:
         candidate_text = fenced_block.group(1)
-    query_start = QUERY_START_PATTERN.search(candidate_text)
-    if not query_start:
-        raise QueryGenerationError("Language model reply contains no SPARQL query")
+    complete_queries = find_complete_queries(candidate_text)
+    if not complete_queries:
+        raise QueryGenerationError(
+            "Language model reply contains no complete SPARQL query"
+        )
+    if len(complete_queries) > 1:
+        raise QueryGenerationError(
+            f"Language model reply contains {len(complete_queries)} SPARQL queries, expected one"
+        )
     try:
-        return validate_sparql_query(candidate_text[query_start.start():])
+        return validate_sparql_query(complete_queries[0])
     except InvalidInputError as error:
         raise QueryGenerationError(f"Generated SPARQL rejected: {error}") from error
