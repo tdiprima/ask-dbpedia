@@ -1,0 +1,12 @@
+[project]
+name = "nl2sparql"
+version = "0.1.0"
+description = "LLM-powered text-to-SPARQL for DBpedia with OpenAI/Ollama backends, query sanitizing, and validated results, no SPARQL required"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.28.1",
+    "ollama>=0.6.2",
+    "openai>=3.16.2",
+    "sparqlwrapper>=2.0.0",
+]
