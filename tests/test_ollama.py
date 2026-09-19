@@ -7,10 +7,10 @@ from unittest import mock
 import httpx
 import ollama
 
-from ollama_backend import generate_sparql_with_ollama
-from errors import ConfigurationError, InvalidInputError, QueryGenerationError
+from nl2sparql.ollama_backend import generate_sparql_with_ollama
+from nl2sparql.errors import ConfigurationError, InvalidInputError, QueryGenerationError
 from tests.fakes import SIMPLE_QUERY
-from sparql_text import MAX_NATURAL_QUERY_LENGTH, SYSTEM_PROMPT
+from nl2sparql.sparql_text import MAX_NATURAL_QUERY_LENGTH, SYSTEM_PROMPT
 
 QUESTION = "Who are some famous pathologists?"
 
@@ -66,7 +66,7 @@ class GenerateSparqlWithOllamaTests(unittest.TestCase):
         )
         for failure in failures:
             with self.subTest(failure=failure):
-                with self.assertLogs("ollama_backend", level="ERROR"):
+                with self.assertLogs("nl2sparql.ollama_backend", level="ERROR"):
                     with self.assertRaises(QueryGenerationError):
                         generate_sparql_with_ollama(QUESTION, make_ollama_client(error=failure))
 
@@ -81,7 +81,7 @@ class GenerateSparqlWithOllamaTests(unittest.TestCase):
         for response in ({}, {"message": None}, {"message": {}}, {"message": "text"}, []):
             with self.subTest(response=response):
                 client = make_ollama_client(response=response)
-                with self.assertLogs("ollama_backend", level="ERROR"):
+                with self.assertLogs("nl2sparql.ollama_backend", level="ERROR"):
                     with self.assertRaises(QueryGenerationError):
                         generate_sparql_with_ollama(QUESTION, client)
 
@@ -104,7 +104,7 @@ class OllamaConfigurationTests(unittest.TestCase):
     def generate_with_environment(self, environment):
         """Run generation with a patched ollama.Client. Return the constructor mock."""
         with mock.patch.dict(os.environ, environment):
-            with mock.patch("ollama_backend.ollama.Client") as constructor:
+            with mock.patch("nl2sparql.ollama_backend.ollama.Client") as constructor:
                 constructor.return_value = make_ollama_client(SIMPLE_QUERY)
                 generate_sparql_with_ollama(QUESTION)
         return constructor
@@ -130,7 +130,7 @@ class OllamaConfigurationTests(unittest.TestCase):
         for bad_timeout in ("0", "301", "abc"):
             with self.subTest(bad_timeout=bad_timeout):
                 with mock.patch.dict(os.environ, {"REQUEST_TIMEOUT_SECONDS": bad_timeout}):
-                    with mock.patch("ollama_backend.ollama.Client") as constructor:
+                    with mock.patch("nl2sparql.ollama_backend.ollama.Client") as constructor:
                         with self.assertRaises(ConfigurationError):
                             generate_sparql_with_ollama(QUESTION)
                     constructor.assert_not_called()

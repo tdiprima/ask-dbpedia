@@ -8,7 +8,7 @@ from pyparsing import ParseBaseException, ParseResults
 from rdflib.plugins.sparql.parser import parseQuery
 from rdflib.plugins.sparql.parserutils import CompValue
 
-from errors import InvalidInputError
+from nl2sparql.errors import InvalidInputError
 
 MAX_SPARQL_QUERY_LENGTH = 10000
 READ_ONLY_QUERY_FORMS = ("SELECT", "ASK", "DESCRIBE", "CONSTRUCT")

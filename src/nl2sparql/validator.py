@@ -2,7 +2,7 @@
 
 import logging
 
-from results import QueryResult, Term
+from nl2sparql.results import QueryResult, Term
 
 logger = logging.getLogger(__name__)
 

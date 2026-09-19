@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
-from errors import ConfigurationError
+from nl2sparql.errors import ConfigurationError
 
 DEFAULT_DBPEDIA_ENDPOINT = "https://dbpedia.org/sparql"
 DEFAULT_OPENAI_MODEL = "gpt-5.2"

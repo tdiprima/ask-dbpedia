@@ -5,19 +5,19 @@ import io
 import unittest
 from unittest import mock
 
-import cli_openai as automate_queries
-import cli_ollama as automate_with_ollama
-import cli_pathology as pathology
-import cli_pathology_batch as run_pathology_queries
-from errors import (
+from nl2sparql import cli_openai as automate_queries
+from nl2sparql import cli_ollama as automate_with_ollama
+from nl2sparql import cli_pathology as pathology
+from nl2sparql import cli_pathology_batch as run_pathology_queries
+from nl2sparql.errors import (
     ConfigurationError,
     InvalidInputError,
     QueryExecutionError,
     QueryGenerationError,
 )
 from tests.fakes import SIMPLE_QUERY
-from pathology_queries import PATHOLOGY_QUERIES
-from pipeline import run_pipeline, run_pipeline_cli
+from nl2sparql.pathology_queries import PATHOLOGY_QUERIES
+from nl2sparql.pipeline import run_pipeline, run_pipeline_cli
 
 EXIT_SUCCESS = 0
 EXIT_PIPELINE_ERROR = 1
@@ -42,14 +42,14 @@ def run_and_capture(function, *arguments):
 class RunPipelineCliTests(unittest.TestCase):
     def setUp(self):
         # The real configure_logging would add a handler to the root logger of the test run.
-        patcher = mock.patch("pipeline.configure_logging")
+        patcher = mock.patch("nl2sparql.pipeline.configure_logging")
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def run_cli(self, rows=None, execution_error=None, generate_sparql=generate_simple_query):
         """Run the CLI with a fake executor. Return (exit code, stdout, executor mock)."""
         with mock.patch(
-            "pipeline.execute_query", return_value=rows, side_effect=execution_error
+            "nl2sparql.pipeline.execute_query", return_value=rows, side_effect=execution_error
         ) as execute:
             exit_code, output = run_and_capture(run_pipeline_cli, QUESTION, generate_sparql)
         return exit_code, output, execute
@@ -68,7 +68,7 @@ class RunPipelineCliTests(unittest.TestCase):
         generate_sparql.assert_called_once_with(QUESTION)
 
     def test_empty_results_exit_two_and_say_so(self):
-        with self.assertLogs("pipeline", level="WARNING"):
+        with self.assertLogs("nl2sparql.pipeline", level="WARNING"):
             exit_code, output, _ = self.run_cli(rows=[])
         self.assertEqual(exit_code, EXIT_RESULTS_NOT_MEANINGFUL)
         self.assertIn("No results found.", output)
@@ -77,7 +77,7 @@ class RunPipelineCliTests(unittest.TestCase):
     def test_blank_results_exit_two(self):
         for blank_rows in ([{"name": ""}], [{"name": "   "}], [{"name": "A"}, {"name": ""}], [{}]):
             with self.subTest(blank_rows=blank_rows):
-                with self.assertLogs("pipeline", level="WARNING"):
+                with self.assertLogs("nl2sparql.pipeline", level="WARNING"):
                     exit_code, _, _ = self.run_cli(rows=blank_rows)
                 self.assertEqual(exit_code, EXIT_RESULTS_NOT_MEANINGFUL)
 
@@ -94,7 +94,7 @@ class RunPipelineCliTests(unittest.TestCase):
         )
         for error in generation_errors:
             with self.subTest(error=error):
-                with self.assertLogs("pipeline", level="ERROR") as logs:
+                with self.assertLogs("nl2sparql.pipeline", level="ERROR") as logs:
                     exit_code, output, execute = self.run_cli(
                         rows=MEANINGFUL_ROWS, generate_sparql=mock.Mock(side_effect=error)
                     )
@@ -104,7 +104,7 @@ class RunPipelineCliTests(unittest.TestCase):
                 self.assertIn(str(error), logs.output[0])
 
     def test_execution_failure_exits_one_and_prints_no_results(self):
-        with self.assertLogs("pipeline", level="ERROR"):
+        with self.assertLogs("nl2sparql.pipeline", level="ERROR"):
             exit_code, output, execute = self.run_cli(
                 execution_error=QueryExecutionError("endpoint is down")
             )
@@ -117,8 +117,8 @@ class RunPipelineCliTests(unittest.TestCase):
         hostile_queries = ("DROP ALL", "SELECT ?s WHERE { SERVICE <http://127.0.0.1/> { ?s ?p ?o } }")
         for hostile_query in hostile_queries:
             with self.subTest(hostile_query=hostile_query):
-                with mock.patch("sparql_executor.fetch_response") as fetch:
-                    with self.assertLogs("pipeline", level="ERROR"):
+                with mock.patch("nl2sparql.sparql_executor.fetch_response") as fetch:
+                    with self.assertLogs("nl2sparql.pipeline", level="ERROR"):
                         exit_code, _ = run_and_capture(
                             run_pipeline_cli, QUESTION, lambda question: hostile_query
                         )
@@ -126,13 +126,13 @@ class RunPipelineCliTests(unittest.TestCase):
                 fetch.assert_not_called()
 
     def test_run_pipeline_reports_empty_results_as_not_valid(self):
-        with mock.patch("pipeline.execute_query", return_value=[]):
-            with self.assertLogs("validator", level="WARNING"):
+        with mock.patch("nl2sparql.pipeline.execute_query", return_value=[]):
+            with self.assertLogs("nl2sparql.validator", level="WARNING"):
                 outcome = run_pipeline(QUESTION, generate_simple_query)
         self.assertEqual(outcome, (SIMPLE_QUERY, [], False))
 
     def test_run_pipeline_lets_domain_errors_reach_the_caller(self):
-        with mock.patch("pipeline.execute_query", side_effect=QueryExecutionError("down")):
+        with mock.patch("nl2sparql.pipeline.execute_query", side_effect=QueryExecutionError("down")):
             with self.assertRaises(QueryExecutionError):
                 run_pipeline(QUESTION, generate_simple_query)
 
@@ -158,14 +158,14 @@ class ScriptEntryPointTests(unittest.TestCase):
 
 class PathologyBatchTests(unittest.TestCase):
     def setUp(self):
-        for module_name in ("cli_pathology_batch", "cli_pathology"):
+        for module_name in ("nl2sparql.cli_pathology_batch", "nl2sparql.cli_pathology"):
             patcher = mock.patch(f"{module_name}.configure_logging")
             patcher.start()
             self.addCleanup(patcher.stop)
 
     def run_batch(self, outcomes):
         """Run the batch with one executor outcome per query. Return (code, stdout, mock)."""
-        with mock.patch("cli_pathology_batch.execute_query", side_effect=outcomes) as execute:
+        with mock.patch("nl2sparql.cli_pathology_batch.execute_query", side_effect=outcomes) as execute:
             exit_code, output = run_and_capture(run_pathology_queries.main)
         return exit_code, output, execute
 
@@ -183,7 +183,7 @@ class PathologyBatchTests(unittest.TestCase):
             with self.subTest(failing_index=failing_index):
                 outcomes = [[{"name": "ok"}] for _ in PATHOLOGY_QUERIES]
                 outcomes[failing_index] = QueryExecutionError("endpoint is down")
-                with self.assertLogs("cli_pathology_batch", level="ERROR") as logs:
+                with self.assertLogs("nl2sparql.cli_pathology_batch", level="ERROR") as logs:
                     exit_code, output, execute = self.run_batch(outcomes)
                 self.assertEqual(exit_code, EXIT_PIPELINE_ERROR)
                 self.assertEqual(execute.call_count, len(PATHOLOGY_QUERIES))
@@ -193,7 +193,7 @@ class PathologyBatchTests(unittest.TestCase):
 
     def test_every_query_failing_exits_one(self):
         outcomes = [QueryExecutionError("down") for _ in PATHOLOGY_QUERIES]
-        with self.assertLogs("cli_pathology_batch", level="ERROR"):
+        with self.assertLogs("nl2sparql.cli_pathology_batch", level="ERROR"):
             exit_code, output, execute = self.run_batch(outcomes)
         self.assertEqual(exit_code, EXIT_PIPELINE_ERROR)
         self.assertEqual(execute.call_count, len(PATHOLOGY_QUERIES))
@@ -205,21 +205,21 @@ class PathologyBatchTests(unittest.TestCase):
         self.assertEqual(output.count("No results found."), len(PATHOLOGY_QUERIES))
 
     def test_predefined_queries_pass_validation(self):
-        with mock.patch("sparql_executor.fetch_response") as fetch:
+        with mock.patch("nl2sparql.sparql_executor.fetch_response") as fetch:
             fetch.return_value = ("application/sparql-results+json", b'{"results": {"bindings": []}}')
-            with mock.patch("sparql_executor.create_sparql_client"):
+            with mock.patch("nl2sparql.sparql_executor.create_sparql_client"):
                 exit_code, _ = run_and_capture(run_pathology_queries.main)
         self.assertEqual(exit_code, EXIT_SUCCESS)
         self.assertEqual(fetch.call_count, len(PATHOLOGY_QUERIES))
 
     def test_single_query_script_exit_codes(self):
-        with mock.patch("cli_pathology_batch.execute_query", return_value=MEANINGFUL_ROWS):
+        with mock.patch("nl2sparql.cli_pathology_batch.execute_query", return_value=MEANINGFUL_ROWS):
             exit_code, output = run_and_capture(pathology.main)
         self.assertEqual(exit_code, EXIT_SUCCESS)
         self.assertIn("name: Rudolf Virchow", output)
         failure = QueryExecutionError("down")
-        with mock.patch("cli_pathology_batch.execute_query", side_effect=failure):
-            with self.assertLogs("cli_pathology_batch", level="ERROR"):
+        with mock.patch("nl2sparql.cli_pathology_batch.execute_query", side_effect=failure):
+            with self.assertLogs("nl2sparql.cli_pathology_batch", level="ERROR"):
                 exit_code, _ = run_and_capture(pathology.main)
         self.assertEqual(exit_code, EXIT_PIPELINE_ERROR)
 

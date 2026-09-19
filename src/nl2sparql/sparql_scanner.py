@@ -6,7 +6,7 @@ from collections import namedtuple
 from pyparsing import Located, ParseBaseException
 from rdflib.plugins.sparql.parser import Query
 
-from sparql_policy import READ_ONLY_QUERY_FORMS
+from nl2sparql.sparql_policy import READ_ONLY_QUERY_FORMS
 
 Token = namedtuple("Token", ["kind", "text", "start", "end"])
 DECLARATION_KEYWORDS = ("PREFIX", "BASE")

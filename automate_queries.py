@@ -1,12 +1,7 @@
 """Compatibility launcher; implementation lives in cli_openai."""
-from pathlib import Path
-import sys
+from nl2sparql.cli_openai import main as run
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-
-from cli_openai import main as run
-
-from openai_backend import generate_sparql
+from nl2sparql.openai_backend import generate_sparql
 
 natural_query = "Who are some famous pathologists?"
 

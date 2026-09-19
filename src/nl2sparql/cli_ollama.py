@@ -1,6 +1,6 @@
 """Run the natural-language pipeline with Ollama."""
-from ollama_backend import generate_sparql_with_ollama
-from pipeline import run_pipeline_cli
+from nl2sparql.ollama_backend import generate_sparql_with_ollama
+from nl2sparql.pipeline import run_pipeline_cli
 
 natural_query = "Who are some famous pathologists?"
 

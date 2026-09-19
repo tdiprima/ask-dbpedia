@@ -9,16 +9,16 @@ import sys
 import unittest
 from unittest import mock
 
-from config import load_settings
-from display import display_results
-from errors import ConfigurationError, InvalidInputError, QueryGenerationError
-from openai_backend import generate_sparql
-from pipeline import run_pipeline, run_query_pipeline, run_pipeline_cli
-from results import QueryResult, Term
-from sparql_executor import execute_query, execute_sparql
-from sparql_text import extract_sparql, validate_sparql_query
+from nl2sparql.config import load_settings
+from nl2sparql.display import display_results
+from nl2sparql.errors import ConfigurationError, InvalidInputError, QueryGenerationError
+from nl2sparql.openai_backend import generate_sparql
+from nl2sparql.pipeline import run_pipeline, run_query_pipeline, run_pipeline_cli
+from nl2sparql.results import QueryResult, Term
+from nl2sparql.sparql_executor import execute_query, execute_sparql
+from nl2sparql.sparql_text import extract_sparql, validate_sparql_query
 from tests.fakes import SIMPLE_QUERY, make_openai_client, make_sparql_client
-from validator import validate_results
+from nl2sparql.validator import validate_results
 
 
 class QuerySyntaxTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class QuerySyntaxTests(unittest.TestCase):
             SIMPLE_QUERY + " SELECT ?s WHERE { ?s ?p ?o }",
         )
         for query in queries:
-            with self.subTest(query=query), mock.patch("sparql_executor.fetch_response") as fetch:
+            with self.subTest(query=query), mock.patch("nl2sparql.sparql_executor.fetch_response") as fetch:
                 with self.assertRaises(InvalidInputError):
                     execute_query(query)
                 fetch.assert_not_called()
@@ -101,7 +101,7 @@ class TypedResultTests(unittest.TestCase):
 
     def test_pipeline_retains_metadata_until_display(self):
         result = QueryResult("SELECT", [{"label": Term("bonjour", "literal", language="fr")}])
-        with mock.patch("pipeline.execute_query", return_value=result):
+        with mock.patch("nl2sparql.pipeline.execute_query", return_value=result):
             _, actual, valid = run_query_pipeline("Who?", lambda question: SIMPLE_QUERY)
             legacy = run_pipeline("Who?", lambda question: SIMPLE_QUERY)
         self.assertEqual(legacy, (SIMPLE_QUERY, [{"label": "bonjour"}], True))
@@ -112,7 +112,7 @@ class TypedResultTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "label: bonjour\n")
         self.assertEqual(actual.rows[0]["label"].language, "fr")
         blank = QueryResult("SELECT", [{"label": Term(" ", "literal")}])
-        with self.assertLogs("validator", level="WARNING"):
+        with self.assertLogs("nl2sparql.validator", level="WARNING"):
             self.assertFalse(validate_results(blank))
 
 
@@ -129,10 +129,10 @@ class StartupTests(unittest.TestCase):
         for backend, environment in cases:
             with self.subTest(backend=backend, environment=environment):
                 generator = mock.Mock()
-                with mock.patch.dict(os.environ, environment), mock.patch("pipeline.execute_query") as execute:
+                with mock.patch.dict(os.environ, environment), mock.patch("nl2sparql.pipeline.execute_query") as execute:
                     with self.assertRaises(ConfigurationError):
                         run_pipeline("Who?", generator, backend=backend)
-                    with self.assertLogs("pipeline", level="ERROR"):
+                    with self.assertLogs("nl2sparql.pipeline", level="ERROR"):
                         self.assertEqual(run_pipeline_cli("Who?", generator, backend=backend), 1)
                 generator.assert_not_called()
                 execute.assert_not_called()
@@ -148,9 +148,9 @@ class StartupTests(unittest.TestCase):
         model_client = make_openai_client(SIMPLE_QUERY)
         transport = make_sparql_client({"results": {"bindings": []}})
         with mock.patch.dict(os.environ, {"DBPEDIA_ENDPOINT": "file:///bad", "REQUEST_TIMEOUT_SECONDS": "0", "OPENAI_MODEL": "changed"}):
-            with mock.patch("openai_backend.openai.OpenAI", return_value=model_client) as model_constructor:
-                with mock.patch("sparql_executor.SPARQLWrapper", return_value=mock.Mock(query=transport.query)) as endpoint_constructor:
-                    with self.assertLogs("validator", level="WARNING"):
+            with mock.patch("nl2sparql.openai_backend.openai.OpenAI", return_value=model_client) as model_constructor:
+                with mock.patch("nl2sparql.sparql_executor.SPARQLWrapper", return_value=mock.Mock(query=transport.query)) as endpoint_constructor:
+                    with self.assertLogs("nl2sparql.validator", level="WARNING"):
                         run_pipeline("Who?", generate_sparql, backend="openai", settings=settings)
         model_constructor.assert_called_once_with(api_key="dummy-test-key", timeout=7)
         self.assertEqual(model_client.chat.completions.create.call_args.kwargs["model"], "test-model")

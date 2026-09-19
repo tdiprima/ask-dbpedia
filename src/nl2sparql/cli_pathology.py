@@ -3,11 +3,11 @@
 import sys
 import logging
 
-from config import load_settings
-from errors import Nl2SparqlError
-from logging_setup import configure_logging
-from pathology_queries import PATHOLOGY_SCIENTISTS
-from cli_pathology_batch import run_titled_query
+from nl2sparql.config import load_settings
+from nl2sparql.errors import Nl2SparqlError
+from nl2sparql.logging_setup import configure_logging
+from nl2sparql.pathology_queries import PATHOLOGY_SCIENTISTS
+from nl2sparql.cli_pathology_batch import run_titled_query
 
 
 def main():

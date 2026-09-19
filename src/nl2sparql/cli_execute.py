@@ -1,10 +1,10 @@
 """Standalone execute demonstration."""
 import logging
-from config import load_settings
-from errors import Nl2SparqlError
-from logging_setup import configure_logging
-from sparql_executor import execute_query, EXAMPLE_SPARQL_QUERY
-from display import display_results
+from nl2sparql.config import load_settings
+from nl2sparql.errors import Nl2SparqlError
+from nl2sparql.logging_setup import configure_logging
+from nl2sparql.sparql_executor import execute_query, EXAMPLE_SPARQL_QUERY
+from nl2sparql.display import display_results
 
 
 def main():

@@ -17,25 +17,25 @@ import openai
 from rdflib import Graph, Literal, URIRef
 from SPARQLWrapper import JSON, TURTLE
 
-from errors import (
+from nl2sparql.errors import (
     ConfigurationError,
     InvalidInputError,
     QueryExecutionError,
     QueryGenerationError,
 )
-from display import display_results, format_row, write_line
-from sparql_executor import MAX_RESPONSE_BYTES, choose_return_format, execute_sparql
+from nl2sparql.display import display_results, format_row, write_line
+from nl2sparql.sparql_executor import MAX_RESPONSE_BYTES, choose_return_format, execute_sparql
 from tests.fakes import (
     SIMPLE_QUERY,
     make_bindings_response,
     make_openai_client,
     make_sparql_client,
 )
-from logging_setup import JsonLogFormatter
-from pipeline import run_pipeline
-from openai_backend import generate_sparql
-from sparql_response import flatten_response
-from sparql_text import (
+from nl2sparql.logging_setup import JsonLogFormatter
+from nl2sparql.pipeline import run_pipeline
+from nl2sparql.openai_backend import generate_sparql
+from nl2sparql.sparql_response import flatten_response
+from nl2sparql.sparql_text import (
     MAX_MODEL_REPLY_LENGTH,
     MAX_NATURAL_QUERY_LENGTH,
     MAX_SPARQL_QUERY_LENGTH,
@@ -43,8 +43,8 @@ from sparql_text import (
     validate_natural_query,
     validate_sparql_query,
 )
-from validator import validate_results
-import config as config
+from nl2sparql.validator import validate_results
+from nl2sparql import config as config
 
 HAS_OPENAI_API_KEY = bool(os.environ.get("OPENAI_API_KEY", "").strip())
 
@@ -597,7 +597,7 @@ class ConfigTests(unittest.TestCase):
 class PipelineTests(unittest.TestCase):
     def test_pipeline_wires_generation_execution_and_validation(self):
         rows = [{"name": "Rudolf Virchow"}]
-        with mock.patch("pipeline.execute_query", return_value=rows) as execute:
+        with mock.patch("nl2sparql.pipeline.execute_query", return_value=rows) as execute:
             outcome = run_pipeline("Who?", lambda question: SIMPLE_QUERY)
         execute.assert_called_once_with(SIMPLE_QUERY, settings=mock.ANY)
         self.assertEqual(outcome, (SIMPLE_QUERY, rows, True))

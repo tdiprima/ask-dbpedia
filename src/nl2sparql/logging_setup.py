@@ -3,8 +3,8 @@
 import json
 import logging
 
-from config import get_log_level
-from errors import ConfigurationError
+from nl2sparql.config import get_log_level
+from nl2sparql.errors import ConfigurationError
 
 
 

@@ -7,10 +7,10 @@ from urllib.error import URLError
 from SPARQLWrapper import JSON, TURTLE, SPARQLWrapper
 from SPARQLWrapper.SPARQLExceptions import SPARQLWrapperException
 
-from config import load_settings
-from errors import QueryExecutionError
-from sparql_response import parse_result
-from sparql_policy import GRAPH_QUERY_FORMS, find_query_form, validate_sparql_query
+from nl2sparql.config import load_settings
+from nl2sparql.errors import QueryExecutionError
+from nl2sparql.sparql_response import parse_result
+from nl2sparql.sparql_policy import GRAPH_QUERY_FORMS, find_query_form, validate_sparql_query
 
 logger = logging.getLogger(__name__)
 

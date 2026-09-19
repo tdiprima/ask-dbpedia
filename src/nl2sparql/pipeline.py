@@ -2,13 +2,13 @@
 
 import logging
 
-from display import display_results, write_line
-from config import load_settings
-from errors import Nl2SparqlError
-from sparql_executor import execute_query
-from logging_setup import configure_logging
-from results import QueryResult
-from validator import validate_results
+from nl2sparql.display import display_results, write_line
+from nl2sparql.config import load_settings
+from nl2sparql.errors import Nl2SparqlError
+from nl2sparql.sparql_executor import execute_query
+from nl2sparql.logging_setup import configure_logging
+from nl2sparql.results import QueryResult
+from nl2sparql.validator import validate_results
 
 logger = logging.getLogger(__name__)
 

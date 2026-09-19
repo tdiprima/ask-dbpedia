@@ -1,12 +1,7 @@
 """Compatibility launcher; implementation lives in cli_ollama."""
-from pathlib import Path
-import sys
+from nl2sparql.cli_ollama import main as run
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-
-from cli_ollama import main as run
-
-from ollama_backend import generate_sparql_with_ollama
+from nl2sparql.ollama_backend import generate_sparql_with_ollama
 
 natural_query = "Who are some famous pathologists?"
 

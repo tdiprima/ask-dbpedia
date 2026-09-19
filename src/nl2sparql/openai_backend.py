@@ -4,9 +4,9 @@ import logging
 
 import openai
 
-from config import load_settings, get_openai_model
-from errors import QueryGenerationError
-from sparql_text import build_chat_messages, extract_sparql
+from nl2sparql.config import load_settings, get_openai_model
+from nl2sparql.errors import QueryGenerationError
+from nl2sparql.sparql_text import build_chat_messages, extract_sparql
 
 logger = logging.getLogger(__name__)
 

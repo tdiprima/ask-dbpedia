@@ -1,10 +1,10 @@
 """Standalone generate demonstration."""
 import logging
-from config import load_settings
-from errors import Nl2SparqlError
-from logging_setup import configure_logging
-from openai_backend import generate_sparql, EXAMPLE_NATURAL_QUERY
-from display import write_line
+from nl2sparql.config import load_settings
+from nl2sparql.errors import Nl2SparqlError
+from nl2sparql.logging_setup import configure_logging
+from nl2sparql.openai_backend import generate_sparql, EXAMPLE_NATURAL_QUERY
+from nl2sparql.display import write_line
 
 
 def main():

@@ -7,7 +7,7 @@ model, so terminal control characters are shown as harmless text.
 import sys
 import unicodedata
 
-from results import QueryResult, Term
+from nl2sparql.results import QueryResult, Term
 
 CONTROL_CATEGORIES = ("Cc", "Zl", "Zp")
 # Bidirectional controls can reorder text on screen and spoof what a row says.

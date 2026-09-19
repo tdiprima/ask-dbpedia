@@ -80,10 +80,10 @@ OPENAI_API_KEY='' uv run python -m unittest discover
 
 ## Code layout
 
-The application uses a flat `src/` directory, not an installable Python package:
+The application is the installable `nl2sparql` package under `src/`; `uv sync` installs it in editable mode:
 
 ```text
-src/
+src/nl2sparql/
   cli_*.py             Command-line orchestration
   openai_backend.py    OpenAI generation
   ollama_backend.py    Ollama generation
@@ -102,12 +102,12 @@ tests/                  Offline and optional live tests, with shared fakes
 
 The root launchers still work from other working directories. Questions remain editable in `automate_queries.py` and `automate_with_ollama.py`.
 
-For Python callers, add `src/` to `PYTHONPATH`. `sparql_executor.execute_query()` returns a `QueryResult`: each row retains `Term(value, kind, datatype, language)` values, or a native boolean for ASK. `execute_sparql()` remains available as a compatibility API returning the original string dictionaries. Rendering does not modify the typed result.
+Python callers import from the `nl2sparql` package. `nl2sparql.sparql_executor.execute_query()` returns a `QueryResult`: each row retains `Term(value, kind, datatype, language)` values, or a native boolean for ASK. `execute_sparql()` remains available as a compatibility API returning the original string dictionaries. Rendering does not modify the typed result.
 
 Likewise, `pipeline.run_query_pipeline()` retains typed results, while `run_pipeline()` preserves its original `(query, string_rows, valid)` return value. Built-in CLI commands load settings for their selected backend before making any requests.
 
 ```bash
-PYTHONPATH=src uv run python -c 'from sparql_executor import execute_query; print(execute_query("ASK { ?s ?p ?o }").rows)'
+uv run python -c 'from nl2sparql.sparql_executor import execute_query; print(execute_query("ASK { ?s ?p ?o }").rows)'
 ```
 
 Optional environment variables:

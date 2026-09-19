@@ -9,10 +9,10 @@ import json
 
 from rdflib import Graph, URIRef, BNode
 
-from results import QueryResult, Term
+from nl2sparql.results import QueryResult, Term
 
-from errors import QueryExecutionError
-from sparql_policy import GRAPH_QUERY_FORMS
+from nl2sparql.errors import QueryExecutionError
+from nl2sparql.sparql_policy import GRAPH_QUERY_FORMS
 
 JSON_CONTENT_TYPES = ("application/sparql-results+json", "application/json")
 GRAPH_CONTENT_TYPES = ("text/turtle", "application/x-turtle", "application/n-triples")

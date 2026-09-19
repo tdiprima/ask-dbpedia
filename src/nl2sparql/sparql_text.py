@@ -2,9 +2,9 @@
 
 import re
 
-from errors import InvalidInputError, QueryGenerationError
-from sparql_scanner import find_complete_queries
-from sparql_policy import validate_sparql_query, MAX_SPARQL_QUERY_LENGTH
+from nl2sparql.errors import InvalidInputError, QueryGenerationError
+from nl2sparql.sparql_scanner import find_complete_queries
+from nl2sparql.sparql_policy import validate_sparql_query, MAX_SPARQL_QUERY_LENGTH
 
 
 MAX_NATURAL_QUERY_LENGTH = 1000

@@ -2,8 +2,8 @@
 
 import sys
 
-from pipeline import run_pipeline_cli
-from openai_backend import generate_sparql
+from nl2sparql.pipeline import run_pipeline_cli
+from nl2sparql.openai_backend import generate_sparql
 
 natural_query = "Who are some famous pathologists?"
 
