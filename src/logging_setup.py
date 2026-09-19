@@ -23,9 +23,9 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(fields)
 
 
-def configure_logging():
+def configure_logging(level_name=None):
     """Configure root logging from the LOG_LEVEL environment variable."""
-    level_name = get_log_level()
+    level_name = level_name or get_log_level()
     level = logging.getLevelName(level_name)
     if not isinstance(level, int):
         raise ConfigurationError(f"LOG_LEVEL is not a valid level: {level_name!r}")

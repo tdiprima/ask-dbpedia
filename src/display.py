@@ -7,6 +7,8 @@ model, so terminal control characters are shown as harmless text.
 import sys
 import unicodedata
 
+from results import QueryResult, Term
+
 CONTROL_CATEGORIES = ("Cc", "Zl", "Zp")
 # Bidirectional controls can reorder text on screen and spoof what a row says.
 # Written as code points so this file holds no invisible characters itself.
@@ -40,7 +42,7 @@ def escape_control_characters(text, keep=""):
         escape_character(character)
         if is_control_character(character) and character not in keep
         else character
-        for character in str(text)
+        for character in str(text.value if isinstance(text, Term) else text)
     )
 
 
@@ -63,6 +65,8 @@ def format_row(row):
 
 def display_results(results):
     """Write every result row, or a notice when there are none."""
+    if isinstance(results, QueryResult):
+        results = results.rows
     if not results:
         write_line("No results found.")
         return

@@ -1,18 +1,10 @@
-"""Run a single pathology-related SPARQL query on DBPedia."""
-
+"""Compatibility launcher for the CLI in src/."""
+from pathlib import Path
 import sys
 
-from logging_setup import configure_logging
-from pathology_queries import PATHOLOGY_SCIENTISTS
-from run_pathology_queries import run_titled_query
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-
-def main():
-    configure_logging()
-    if not run_titled_query("Pathology scientists", PATHOLOGY_SCIENTISTS):
-        return 1
-    return 0
-
+from cli_pathology import main
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

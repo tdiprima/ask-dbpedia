@@ -1,57 +1,19 @@
-"""Same as automate_queries.py, but uses a local Ollama model instead of OpenAI.
-
-Note: OpenAI's GPT-5.2 performs better than Ollama's Mistral at writing SPARQL.
-"""
-
-import logging
+"""Compatibility launcher; implementation lives in cli_ollama."""
+from pathlib import Path
 import sys
 
-import httpx
-import ollama
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from config import get_ollama_host, get_ollama_model, get_request_timeout_seconds
-from errors import QueryGenerationError
-from pipeline import run_pipeline_cli
-from sparql_text import build_chat_messages, extract_sparql
+from cli_ollama import main as run
 
-logger = logging.getLogger(__name__)
+from ollama_backend import generate_sparql_with_ollama
 
 natural_query = "Who are some famous pathologists?"
 
 
-def generate_sparql_with_ollama(question, client=None):
-    """Return a read-only SPARQL query written by the local Ollama model."""
-    messages = build_chat_messages(question)
-    if client is None:
-        client = ollama.Client(
-            host=get_ollama_host(), timeout=get_request_timeout_seconds()
-        )
-    model = get_ollama_model()
-    try:
-        response = client.chat(model=model, messages=messages)
-    except (
-        ollama.ResponseError,
-        ollama.RequestError,
-        httpx.HTTPError,
-        ConnectionError,
-    ) as error:
-        logger.error("ollama_request_failed model=%s error=%s", model, error)
-        raise QueryGenerationError(f"Ollama request failed: {error}") from error
-    return extract_sparql(read_reply_text(response))
-
-
-def read_reply_text(response):
-    """Return the reply text from an Ollama chat response."""
-    try:
-        return response["message"]["content"]
-    except (KeyError, TypeError) as error:
-        logger.error("ollama_reply_malformed error=%r", error)
-        raise QueryGenerationError("Ollama reply has no message content") from error
-
-
 def main():
-    return run_pipeline_cli(natural_query, generate_sparql_with_ollama)
+    return run(natural_query)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

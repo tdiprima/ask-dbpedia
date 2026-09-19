@@ -14,9 +14,9 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 from errors import ConfigurationError, QueryExecutionError
-from executor import USER_AGENT, execute_sparql
-from fakes import SIMPLE_QUERY, make_bindings_response, make_openai_client
-from query_generator import create_openai_client, generate_sparql
+from sparql_executor import USER_AGENT, execute_sparql
+from tests.fakes import SIMPLE_QUERY, make_bindings_response, make_openai_client
+from openai_backend import create_openai_client, generate_sparql
 
 CONSTRUCT_QUERY = "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 2"
 TEST_ENDPOINT = "https://sparql.example.test/endpoint"
@@ -220,7 +220,7 @@ class ResponseConversionTests(TransportTestCase):
         for status in (400, 401, 403, 404, 500, 503):
             with self.subTest(status=status):
                 error = HTTPError(TEST_ENDPOINT, status, "failed", {}, io.BytesIO(b"details"))
-                with self.assertLogs("executor", level="ERROR"):
+                with self.assertLogs("sparql_executor", level="ERROR"):
                     with self.assertRaises(QueryExecutionError):
                         self.run_query(SIMPLE_QUERY, b"", JSON_CONTENT_TYPE, error=error)
 
@@ -239,7 +239,7 @@ class OpenAiClientConfigurationTests(unittest.TestCase):
         for blank_key in ("", "   "):
             with self.subTest(blank_key=blank_key):
                 with mock.patch.dict(os.environ, {"OPENAI_API_KEY": blank_key}):
-                    with mock.patch("query_generator.openai.OpenAI") as constructor:
+                    with mock.patch("openai_backend.openai.OpenAI") as constructor:
                         with self.assertRaises(ConfigurationError):
                             create_openai_client()
                     constructor.assert_not_called()

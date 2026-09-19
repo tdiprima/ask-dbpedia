@@ -3,15 +3,11 @@
 import re
 
 from errors import InvalidInputError, QueryGenerationError
-from sparql_scanner import (
-    READ_ONLY_QUERY_FORMS,
-    find_complete_queries,
-    find_forbidden_keyword,
-    find_query_form,
-)
+from sparql_scanner import find_complete_queries
+from sparql_policy import validate_sparql_query, MAX_SPARQL_QUERY_LENGTH
+
 
 MAX_NATURAL_QUERY_LENGTH = 1000
-MAX_SPARQL_QUERY_LENGTH = 10000
 MAX_MODEL_REPLY_LENGTH = 50000
 
 SYSTEM_PROMPT = (
@@ -46,29 +42,6 @@ def build_chat_messages(natural_query):
     ]
 
 
-def validate_sparql_query(sparql_query):
-    """Return the trimmed query. Only read-only query forms are accepted."""
-    if not isinstance(sparql_query, str):
-        raise InvalidInputError("SPARQL query must be a string")
-    trimmed_query = sparql_query.strip()
-    if not trimmed_query:
-        raise InvalidInputError("SPARQL query must not be empty")
-    if len(trimmed_query) > MAX_SPARQL_QUERY_LENGTH:
-        raise InvalidInputError(
-            f"SPARQL query exceeds {MAX_SPARQL_QUERY_LENGTH} characters"
-        )
-    query_form = find_query_form(trimmed_query)
-    if query_form not in READ_ONLY_QUERY_FORMS:
-        raise InvalidInputError(
-            f"Only {', '.join(READ_ONLY_QUERY_FORMS)} queries are allowed, "
-            f"got {query_form or 'nothing recognizable'!r}"
-        )
-    forbidden_keyword = find_forbidden_keyword(trimmed_query)
-    if forbidden_keyword:
-        raise InvalidInputError(f"{forbidden_keyword} is not allowed in queries")
-    return trimmed_query
-
-
 def extract_sparql(model_reply):
     """Pull the SPARQL query out of a language model reply."""
     if not isinstance(model_reply, str) or not model_reply.strip():
@@ -77,11 +50,8 @@ def extract_sparql(model_reply):
         raise QueryGenerationError(
             f"Language model reply exceeds {MAX_MODEL_REPLY_LENGTH} characters"
         )
-    candidate_text = model_reply
-    fenced_block = CODE_FENCE_PATTERN.search(model_reply)
-    if fenced_block:
-        candidate_text = fenced_block.group(1)
-    complete_queries = find_complete_queries(candidate_text)
+    candidates = CODE_FENCE_PATTERN.findall(model_reply) or [model_reply]
+    complete_queries = [query for text in candidates for query in find_complete_queries(text)]
     if not complete_queries:
         raise QueryGenerationError(
             "Language model reply contains no complete SPARQL query"

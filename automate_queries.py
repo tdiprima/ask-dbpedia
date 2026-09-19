@@ -1,16 +1,19 @@
-"""Fully automated run: natural language -> GPT-5.2 -> DBPedia -> printed results."""
-
+"""Compatibility launcher; implementation lives in cli_openai."""
+from pathlib import Path
 import sys
 
-from pipeline import run_pipeline_cli
-from query_generator import generate_sparql
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+from cli_openai import main as run
+
+from openai_backend import generate_sparql
 
 natural_query = "Who are some famous pathologists?"
 
 
 def main():
-    return run_pipeline_cli(natural_query, generate_sparql)
+    return run(natural_query)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
