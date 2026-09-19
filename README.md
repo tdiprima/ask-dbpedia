@@ -1,4 +1,4 @@
-# nl2sparql
+# Ask DBpedia
 
 [![CI](https://github.com/tdiprima/nl2sparql/actions/workflows/ci.yml/badge.svg)](https://github.com/tdiprima/nl2sparql/actions/workflows/ci.yml)
 
