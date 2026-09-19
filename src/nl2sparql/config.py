@@ -9,7 +9,7 @@ from nl2sparql.errors import ConfigurationError
 
 DEFAULT_DBPEDIA_ENDPOINT = "https://dbpedia.org/sparql"
 DEFAULT_OPENAI_MODEL = "gpt-5.2"
-DEFAULT_OLLAMA_MODEL = "mistral"
+DEFAULT_OLLAMA_MODEL = "gemma4"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
 DEFAULT_LOG_LEVEL = "INFO"

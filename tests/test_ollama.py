@@ -61,7 +61,7 @@ class GenerateSparqlWithOllamaTests(unittest.TestCase):
             httpx.ConnectError("connection refused"),
             httpx.ReadTimeout("timed out"),
             httpx.ConnectTimeout("timed out"),
-            ollama.ResponseError("model 'mistral' not found", 404),
+            ollama.ResponseError("model 'gemma4' not found", 404),
             ollama.RequestError("bad request"),
         )
         for failure in failures:
@@ -124,7 +124,7 @@ class OllamaConfigurationTests(unittest.TestCase):
         environment = {"OLLAMA_HOST": "", "OLLAMA_MODEL": " ", "REQUEST_TIMEOUT_SECONDS": ""}
         constructor = self.generate_with_environment(environment)
         constructor.assert_called_once_with(host="http://localhost:11434", timeout=30)
-        self.assertEqual(constructor.return_value.chat.call_args.kwargs["model"], "mistral")
+        self.assertEqual(constructor.return_value.chat.call_args.kwargs["model"], "gemma4")
 
     def test_bad_timeout_never_builds_a_client(self):
         for bad_timeout in ("0", "301", "abc"):

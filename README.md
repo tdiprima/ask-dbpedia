@@ -12,7 +12,7 @@ DBpedia holds structured facts from Wikipedia, but you can only reach them throu
 
 nl2sparql chains four guarded stages:
 
-1. **Generate**: OpenAI (default `gpt-5.2`) or a local Ollama model (default `mistral`) turns the question into SPARQL using a DBpedia-aware system prompt.
+1. **Generate**: OpenAI (default `gpt-5.2`) or a local Ollama model (default `gemma4`) turns the question into SPARQL using a DBpedia-aware system prompt.
 2. **Sanitize**: Code fences and stray prose are stripped. RDFLib parses the complete query, then a separate policy rejects federation (`SERVICE`). Only read-only forms (`SELECT`, `ASK`, `DESCRIBE`, `CONSTRUCT`) pass. Input and query length are capped.
 3. **Execute**: The query runs against the DBpedia endpoint via SPARQLWrapper with a timeout and a descriptive user agent.
 4. **Validate**: Empty or blank results are flagged, and the CLI exits with a distinct code (`2`).
@@ -53,7 +53,7 @@ uv run python automate_queries.py
 Run with a local Ollama model, no API key needed:
 
 ```bash
-ollama pull mistral
+ollama pull gemma4
 uv run python automate_with_ollama.py
 ```
 
@@ -115,13 +115,13 @@ Optional environment variables:
 | Variable | Default |
 |---|---|
 | `OPENAI_MODEL` | `gpt-5.2` |
-| `OLLAMA_MODEL` | `mistral` |
+| `OLLAMA_MODEL` | `gemma4` |
 | `OLLAMA_HOST` | `http://localhost:11434` |
 | `DBPEDIA_ENDPOINT` | `https://dbpedia.org/sparql` |
 | `REQUEST_TIMEOUT_SECONDS` | `30` (max `300`) |
 | `LOG_LEVEL` | `INFO` |
 
-GPT-5.2 writes better SPARQL than Mistral, so use OpenAI when accuracy matters.
+GPT-5.2 writes better SPARQL than gemma4, so use OpenAI when accuracy matters.
 
 ## License
 
