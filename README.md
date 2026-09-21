@@ -84,7 +84,7 @@ OPENAI_API_KEY='' uv run python -m unittest discover
 The application is the installable `nl2sparql` package under `src/`; `uv sync` installs it in editable mode:
 
 ```text
-src/nl2sparql/
+nl2sparql/
   cli_*.py             Command-line orchestration
   openai_backend.py    OpenAI generation
   ollama_backend.py    Ollama generation
@@ -127,3 +127,5 @@ GPT-5.2 writes better SPARQL than gemma4, so use OpenAI when accuracy matters.
 ## License
 
 See [LICENSE](LICENSE).
+
+<br>
