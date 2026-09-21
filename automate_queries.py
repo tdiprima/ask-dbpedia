@@ -1,7 +1,6 @@
 """Compatibility launcher; implementation lives in cli_openai."""
 from nl2sparql.cli_openai import main as run
 
-from nl2sparql.openai_backend import generate_sparql
 
 natural_query = "Who are some famous pathologists?"
 

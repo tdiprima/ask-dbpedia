@@ -20,6 +20,7 @@ nl2sparql chains four guarded stages:
 This checks syntax and result shape, not whether an answer is factually correct or whether the generated query captures the question's meaning. Standard undeclared DBpedia prefixes remain supported.
 
 Design highlights:
+
 - Swappable LLM backends behind one shared pipeline
 - Domain-specific exceptions and structured logging
 - Env-var configuration, with the API key never hardcoded
