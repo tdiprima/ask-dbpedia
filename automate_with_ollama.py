@@ -6,7 +6,11 @@ natural_query = "Who are some famous pathologists?"
 
 
 def main():
-    return run(natural_query)
+    try:
+        return run(natural_query)
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        return 130
 
 
 if __name__ == "__main__":
