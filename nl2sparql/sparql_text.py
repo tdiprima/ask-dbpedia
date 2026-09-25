@@ -13,6 +13,7 @@ MAX_MODEL_REPLY_LENGTH = 50000
 SYSTEM_PROMPT = (
     "You translate natural language questions into SPARQL queries for DBPedia. "
     "Use the standard DBPedia prefixes (dbo:, dbr:, dbp:, foaf:, rdfs:). "
+    "Always begin the query with the PREFIX declarations for every prefix you use. "
     "Always include a LIMIT clause. "
     "Reply with the SPARQL query only. No explanation. No markdown."
 )
